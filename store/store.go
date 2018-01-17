@@ -5,6 +5,7 @@ import (
 	"github.com/frankh/arachnacoin/block"
 	"github.com/frankh/arachnacoin/transaction"
 	_ "github.com/mattn/go-sqlite3"
+	"log"
 )
 
 var Conn *sql.DB
@@ -23,6 +24,7 @@ func Init(path string) {
 	}
 
 	if !table_check.Next() {
+		log.Printf("Database was empty, creating schema...")
 		prep, err := Conn.Prepare(`
       CREATE TABLE 'block' (
         'hash' TEXT PRIMARY KEY,
@@ -62,15 +64,41 @@ func Init(path string) {
 			panic(err)
 		}
 	}
-
+	table_check.Close()
 	rows, err := Conn.Query(`SELECT hash FROM block WHERE hash=?`, block.GenesisBlock.HashString())
 	defer rows.Close()
 	if err != nil {
 		panic(err)
 	}
 	if !rows.Next() {
+		log.Printf("Creating genesis block...")
 		StoreBlock(block.GenesisBlock)
 	}
+}
+
+func FetchHighestBlock() *block.Block {
+	if Conn == nil {
+		panic("Database connection not initialised")
+	}
+
+	rows, err := Conn.Query(`SELECT
+    hash,
+    height,
+    previous,
+    work
+  FROM block ORDER BY height DESC`)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if !rows.Next() {
+		return nil
+	}
+
+	block := blockFromRows(rows)
+	return &block
+
 }
 
 // Fetch a block from the database from the hash
@@ -81,11 +109,11 @@ func FetchBlock(hash string) *block.Block {
 	}
 
 	rows, err := Conn.Query(`SELECT
+    hash,
     height,
     previous,
     work
   FROM block WHERE hash=?`, hash)
-	defer rows.Close()
 
 	if err != nil {
 		panic(err)
@@ -95,11 +123,18 @@ func FetchBlock(hash string) *block.Block {
 		return nil
 	}
 
+	block := blockFromRows(rows)
+	return &block
+}
+
+func blockFromRows(rows *sql.Rows) block.Block {
+	var hash string
 	var height uint32
 	var previous string
 	var work uint32
 
-	err = rows.Scan(
+	err := rows.Scan(
+		&hash,
 		&height,
 		&previous,
 		&work,
@@ -121,7 +156,7 @@ func FetchBlock(hash string) *block.Block {
 		panic("Fetched hash is wrong! DB corrupt!")
 	}
 
-	return &block
+	return block
 }
 
 func StoreBlock(b block.Block) {
