@@ -77,7 +77,7 @@ func Init(path string) {
 	}
 }
 
-func FetchHighestBlock() *block.Block {
+func FetchHighestBlock() block.Block {
 	if Conn == nil {
 		panic("Database connection not initialised")
 	}
@@ -87,18 +87,18 @@ func FetchHighestBlock() *block.Block {
     height,
     previous,
     work
-  FROM block ORDER BY height DESC`)
+  FROM block ORDER BY height DESC, hash`)
 
 	if err != nil {
 		panic(err)
 	}
 
 	if !rows.Next() {
-		return nil
+		panic("Missing highest block")
 	}
 
 	block := blockFromRows(rows)
-	return &block
+	return block
 
 }
 

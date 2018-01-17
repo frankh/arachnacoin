@@ -11,7 +11,7 @@ type Transaction struct {
 	Output    string `json:"output"`
 	Amount    uint32 `json:"amount"`
 	Signature string `json:"signature"`
-	Unique    string `json:"unique"`
+	Unique    string `json:"unique"` // Due to design flaws, we need a unique string here to prevent transaction hash collisions
 }
 
 func (t *Transaction) Hash() []byte {

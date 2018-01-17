@@ -7,7 +7,7 @@ import (
 	"github.com/frankh/arachnacoin/transaction"
 )
 
-var difficulty uint32 = 0xffffff00
+var Difficulty uint32 = 0xffffff00
 
 func GenerateWork(b block.Block) uint32 {
 	hash := b.Hash()
@@ -29,7 +29,7 @@ func ValidateWork(blockHash []byte, work uint32) bool {
 	value := h.Sum(nil)
 	valueInt := binary.BigEndian.Uint32(value)
 
-	return valueInt > difficulty
+	return valueInt > Difficulty
 }
 
 func ValidateBlockWork(b block.Block) bool {

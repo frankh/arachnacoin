@@ -13,7 +13,7 @@ var memPool []*transaction.Transaction
 func main() {
 	log.Printf("Arachnacoin starting up...")
 	store.Init("db.sqlite")
-	head := *store.FetchHighestBlock()
+	head := store.FetchHighestBlock()
 	log.Printf("Initialised... Longest chain is height %d", head.Height)
 
 	for {
