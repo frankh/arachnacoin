@@ -37,6 +37,14 @@ func ValidateBlockWork(b block.Block) bool {
 }
 
 func Mine(previous block.Block, transactions []transaction.Transaction, rewardAccount string) block.Block {
+	transactions = append(transactions, transaction.Transaction{
+		"blockReward",
+		rewardAccount,
+		5000,
+		"unsigned",
+		previous.HashString(),
+	})
+
 	b := block.Block{
 		previous.HashString(),
 		0x0, //empty work to start with

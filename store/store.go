@@ -49,6 +49,7 @@ func Init(path string) {
         'output' TEXT NOT NULL,
         'amount' INT NOT NULL,
         'signature' TEXT NOT NULL,
+        'unique' TEXT NOT NULL,
         'order' INT NOT NULL,
         'block' TEXT NOT NULL,
         'block_height' INT NOT NULL,
@@ -203,11 +204,12 @@ func StoreTransaction(b block.Block, order int, t transaction.Transaction) {
       output,
       amount,
       signature,
-      order,
+      'unique',
+      'order',
       block,
       block_height
     ) values (
-      ?,?,?,?,?,?,?,?
+      ?,?,?,?,?,?,?,?,?
     )
   `)
 
@@ -221,6 +223,7 @@ func StoreTransaction(b block.Block, order int, t transaction.Transaction) {
 		t.Output,
 		t.Amount,
 		t.Signature,
+		t.Unique,
 		order,
 		b.HashString(),
 		b.Height,
@@ -229,6 +232,51 @@ func StoreTransaction(b block.Block, order int, t transaction.Transaction) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func FetchTransactionsForAccount(account string) []transaction.Transaction {
+	results := make([]transaction.Transaction, 0)
+	if Conn == nil {
+		panic("Database connection not initialised")
+	}
+
+	rows, err := Conn.Query(`SELECT
+      input,
+      output,
+      amount,
+      signature,
+      'unique'
+    FROM transactions WHERE input=? OR output=? ORDER BY 'block_height' asc, 'order' asc`, account, account)
+	defer rows.Close()
+
+	if err != nil {
+		panic(err)
+	}
+
+	for rows.Next() {
+		var input string
+		var output string
+		var amount uint32
+		var signature string
+		var unique string
+
+		err = rows.Scan(
+			&input,
+			&output,
+			&amount,
+			&signature,
+			&unique,
+		)
+		results = append(results, transaction.Transaction{
+			input,
+			output,
+			amount,
+			signature,
+			unique,
+		})
+	}
+
+	return results
 }
 
 func FetchBlockTransactions(blockHash string) []transaction.Transaction {
@@ -241,7 +289,8 @@ func FetchBlockTransactions(blockHash string) []transaction.Transaction {
       input,
       output,
       amount,
-      signature
+      signature,
+      'unique'
     FROM transactions WHERE block=?`, blockHash)
 	defer rows.Close()
 
@@ -254,18 +303,21 @@ func FetchBlockTransactions(blockHash string) []transaction.Transaction {
 		var output string
 		var amount uint32
 		var signature string
+		var unique string
 
 		err = rows.Scan(
 			&input,
 			&output,
 			&amount,
 			&signature,
+			&unique,
 		)
 		results = append(results, transaction.Transaction{
 			input,
 			output,
 			amount,
 			signature,
+			unique,
 		})
 	}
 
