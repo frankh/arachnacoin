@@ -9,7 +9,7 @@ import (
 )
 
 func TestGetBalance(t *testing.T) {
-	work.Difficulty = 0xffff0000
+	work.Difficulty = 0xff000000
 	store.Init(":memory:")
 
 	if GetBalance("zero") != 0 {
