@@ -8,13 +8,15 @@ import (
 
 var GenesisBlock = Block{
 	"00000000000000000000000000000000",
-	0x000000000012f6de,
+	0x00003b60,
+	0,
 	make([]transaction.Transaction, 0),
 }
 
 type Block struct {
 	Previous     string                    `json:"previous"`
-	Work         uint64                    `json:"work"`
+	Work         uint32                    `json:"work"`
+	Height       uint32                    `json:"height"`
 	Transactions []transaction.Transaction `json:"transactions"`
 }
 
@@ -29,4 +31,8 @@ func (b *Block) Hash() []byte {
 	}
 
 	return h.Sum(nil)
+}
+
+func (b *Block) HashString() string {
+	return hex.EncodeToString(b.Hash())
 }
