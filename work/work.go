@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"github.com/frankh/arachnacoin/block"
 	"github.com/frankh/arachnacoin/transaction"
-	"log"
 )
 
 var Difficulty uint32 = 0xffffff00

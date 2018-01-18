@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"github.com/frankh/arachnacoin/block"
 	"github.com/frankh/arachnacoin/transaction"
+	"github.com/frankh/arachnacoin/work"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
+	"strings"
 )
 
 var Conn *sql.DB
@@ -324,6 +326,118 @@ func FetchTransactionsForAccount(account string) []transaction.Transaction {
       signature,
       unique_string
     FROM 'arach_transaction' WHERE input=? OR output=? ORDER BY 'block_height' asc, 'order' asc`, account, account)
+	defer rows.Close()
+
+	if err != nil {
+		panic(err)
+	}
+
+	for rows.Next() {
+		var input string
+		var output string
+		var amount uint32
+		var signature string
+		var unique string
+
+		err = rows.Scan(
+			&input,
+			&output,
+			&amount,
+			&signature,
+			&unique,
+		)
+		results = append(results, transaction.Transaction{
+			input,
+			output,
+			amount,
+			signature,
+			unique,
+		})
+	}
+
+	return results
+}
+
+func ValidateBlock(b block.Block) bool {
+	// Always trust the genesis block
+	if b.HashString() == block.GenesisBlock.HashString() {
+		return true
+	} else {
+		if !work.ValidateBlockWork(b) {
+			return false
+		}
+		// Ensure there's only 1 blockreward issued per block and that it's
+		// for the correct blockreward amount.
+		hasReward := false
+		for _, t := range b.Transactions {
+			if t.Input == "blockReward" && (hasReward || t.Amount != block.BlockReward) {
+				return false
+			}
+		}
+
+		// Get list of block hashes back to genesis
+		hashChain := GetBlockHashChain(&b)
+		// Missing link in the chain - this is an invalid block
+		// until we get the missing links.
+		if hashChain == nil {
+			return false
+		}
+
+		// Finally, check the transactions from genesis to
+		// now all make sense.
+		return VerifyTransactionsInChain(hashChain)
+	}
+}
+
+func GetBlockHashChain(b *block.Block) []string {
+	results := []string{b.HashString()}
+
+	for b.Previous != block.GenesisBlock.Previous {
+		b = FetchBlock(b.Previous)
+		if b == nil {
+			return nil
+		}
+		results = append(results, b.HashString())
+	}
+	return results
+}
+
+func VerifyTransactionsInChain(blockHashes []string) bool {
+	ts := GetTransactionsForHashes(blockHashes)
+	balances := make(map[string]uint32)
+
+	for _, t := range ts {
+		// Assume Blockrewards are valid. These should be checked
+		// in the block itself.
+		if t.Input == "blockReward" {
+			continue
+		}
+
+		if t.Amount > balances[t.Input] {
+			return false
+		}
+		balances[t.Input] -= t.Amount
+		balances[t.Output] += t.Amount
+	}
+	return true
+}
+
+func GetTransactionsForHashes(blockHashes []string) []transaction.Transaction {
+	results := make([]transaction.Transaction, 0)
+	if len(blockHashes) == 0 {
+		return results
+	}
+	if Conn == nil {
+		panic("Database connection not initialised")
+	}
+
+	rows, err := Conn.Query(`SELECT
+      input,
+      output,
+      amount,
+      signature,
+      unique_string
+    FROM 'arach_transaction' WHERE block in (?) ORDER BY 'block_height' asc, 'order' asc`, strings.Join(blockHashes, ","))
 	defer rows.Close()
 
 	if err != nil {

@@ -24,6 +24,7 @@ func main() {
 		newBlock := work.Mine(head, make([]transaction.Transaction, 0), store.MyWallet.Address())
 		log.Printf("Mined new block, new height %d", newBlock.Height)
 		store.StoreBlock(newBlock)
+		node.BroadcastLatestBlock()
 		log.Printf("Balance: %d", store.GetBalance(store.MyWallet.Address()))
 		head = newBlock
 	}
