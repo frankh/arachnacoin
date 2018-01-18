@@ -1,0 +1,6 @@
+version: "2"
+services:
+  node1:
+    image: frankh/arachnacoin
+  node2:
+    image: frankh/arachnacoin

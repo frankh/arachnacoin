@@ -18,7 +18,7 @@ func Init(path string) {
 	}
 	Conn.SetMaxOpenConns(1)
 
-	table_check, err := Conn.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name='block'`)
+	table_check, err := Conn.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name='arach_block'`)
 	if err != nil {
 		panic(err)
 	}
@@ -26,7 +26,7 @@ func Init(path string) {
 	if !table_check.Next() {
 		log.Printf("Database was empty, creating schema...")
 		prep, err := Conn.Prepare(`
-      CREATE TABLE 'block' (
+      CREATE TABLE 'arach_block' (
         'hash' TEXT PRIMARY KEY,
         'height' INT NOT NULL,
         'previous' TEXT NOT NULL,
@@ -43,7 +43,7 @@ func Init(path string) {
 			panic(err)
 		}
 		prep, err = Conn.Prepare(`
-      CREATE TABLE 'transactions' (
+      CREATE TABLE 'arach_transaction' (
         'hash' TEXT PRIMARY KEY,
         'input' TEXT NOT NULL,
         'output' TEXT NOT NULL,
@@ -64,10 +64,23 @@ func Init(path string) {
 		if err != nil {
 			panic(err)
 		}
+		prep, err = Conn.Prepare(`
+      CREATE TABLE 'arach_wallet' (
+        'public_key' TEXT PRIMARY KEY,
+        'private_key' TEXT NOT NULL,
+        'created' DATE DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+    `)
+		if err != nil {
+			panic(err)
+		}
+		_, err = prep.Exec()
+		if err != nil {
+			panic(err)
+		}
 	}
 	table_check.Close()
-	rows, err := Conn.Query(`SELECT hash FROM block WHERE hash=?`, block.GenesisBlock.HashString())
-	defer rows.Close()
+	rows, err := Conn.Query(`SELECT hash FROM arach_block WHERE hash=?`, block.GenesisBlock.HashString())
 	if err != nil {
 		panic(err)
 	}
@@ -75,6 +88,70 @@ func Init(path string) {
 		log.Printf("Creating genesis block...")
 		StoreBlock(block.GenesisBlock)
 	}
+	rows.Close()
+
+	w := FetchWallet()
+	MyWallet = &w
+}
+
+func StoreWallet(w Wallet) {
+	prep, err := Conn.Prepare(`
+    INSERT INTO arach_wallet (
+      public_key,
+      private_key
+    ) values (
+      ?,?
+    )
+  `)
+
+	if err != nil {
+		panic(err)
+	}
+
+	pub, priv := w.KeyStrings()
+	_, err = prep.Exec(
+		pub,
+		priv,
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+func FetchWallet() Wallet {
+	if Conn == nil {
+		panic("Database connection not initialised")
+	}
+
+	rows, err := Conn.Query(`SELECT
+    public_key,
+    private_key
+  FROM arach_wallet`)
+	defer rows.Close()
+	if err != nil {
+		panic(err)
+	}
+
+	if !rows.Next() {
+		w := GenerateWallet()
+		StoreWallet(w)
+		return w
+	}
+
+	var private_key string
+	var public_key string
+
+	err = rows.Scan(
+		&public_key,
+		&private_key,
+	)
+	if err != nil {
+		panic("Couldn't get wallet")
+	}
+
+	return FromKeyStrings(public_key, private_key)
 }
 
 func FetchHighestBlock() block.Block {
@@ -87,7 +164,7 @@ func FetchHighestBlock() block.Block {
     height,
     previous,
     work
-  FROM block ORDER BY height DESC, hash`)
+  FROM arach_block ORDER BY height DESC, hash`)
 
 	if err != nil {
 		panic(err)
@@ -114,7 +191,7 @@ func FetchBlock(hash string) *block.Block {
     height,
     previous,
     work
-  FROM block WHERE hash=?`, hash)
+  FROM arach_block WHERE hash=?`, hash)
 
 	if err != nil {
 		panic(err)
@@ -162,7 +239,7 @@ func blockFromRows(rows *sql.Rows) block.Block {
 
 func StoreBlock(b block.Block) {
 	prep, err := Conn.Prepare(`
-    INSERT INTO block (
+    INSERT INTO arach_block (
       hash,
       height,
       previous,
@@ -198,7 +275,7 @@ func StoreTransactions(b block.Block, ts []transaction.Transaction) {
 
 func StoreTransaction(b block.Block, order int, t transaction.Transaction) {
 	prep, err := Conn.Prepare(`
-    INSERT INTO transactions (
+    INSERT INTO arach_transaction (
       hash,
       input,
       output,
@@ -246,7 +323,7 @@ func FetchTransactionsForAccount(account string) []transaction.Transaction {
       amount,
       signature,
       unique_string
-    FROM transactions WHERE input=? OR output=? ORDER BY 'block_height' asc, 'order' asc`, account, account)
+    FROM 'arach_transaction' WHERE input=? OR output=? ORDER BY 'block_height' asc, 'order' asc`, account, account)
 	defer rows.Close()
 
 	if err != nil {
@@ -291,7 +368,7 @@ func FetchBlockTransactions(blockHash string) []transaction.Transaction {
       amount,
       signature,
       unique_string
-    FROM transactions WHERE block=?`, blockHash)
+    FROM 'arach_transaction' WHERE block=?`, blockHash)
 	defer rows.Close()
 
 	if err != nil {

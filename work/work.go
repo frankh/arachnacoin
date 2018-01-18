@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"github.com/frankh/arachnacoin/block"
 	"github.com/frankh/arachnacoin/transaction"
+	"log"
 )
 
 var Difficulty uint32 = 0xffffff00
@@ -53,6 +54,5 @@ func Mine(previous block.Block, transactions []transaction.Transaction, rewardAc
 	}
 
 	b.Work = GenerateWork(b)
-
 	return b
 }
