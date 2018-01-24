@@ -143,7 +143,8 @@ func requestBlockChain(peer Peer, b block.Block) {
 
 	jsonMessage, err := json.Marshal(message)
 	if err != nil {
-		panic(err)
+		log.Printf("Couldn't read message %x", jsonMessage)
+		return
 	}
 
 	log.Printf("Requesting chain up to %d from %s", b.Height, peer.Address)
