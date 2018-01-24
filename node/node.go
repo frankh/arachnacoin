@@ -60,7 +60,8 @@ func PeerServer() {
 		remoteIp := AddrToIp(conn.RemoteAddr())
 
 		if AddrToIp(conn.RemoteAddr()) == AddrToIp(conn.LocalAddr()) {
-			return
+			log.Printf("Ignored connecting to self")
+			continue
 		}
 
 		log.Printf("Accepted connection from peer %s", remoteIp)

@@ -2,5 +2,9 @@ version: "2"
 services:
   node1:
     image: frankh/arachnacoin
+    volumes:
+      - ./dbnode1.sqlite:/db.sqlite
   node2:
     image: frankh/arachnacoin
+    volumes:
+      - ./dbnode2.sqlite:/db.sqlite
