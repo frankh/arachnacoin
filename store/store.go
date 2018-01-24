@@ -320,13 +320,20 @@ func FetchTransactionsForAccount(account string) []transaction.Transaction {
 		panic("Database connection not initialised")
 	}
 
+	latest := FetchHighestBlock()
+	queryArgs := []interface{}{account, account}
+
+	for _, hash := range GetBlockHashChain(&latest) {
+		queryArgs = append(queryArgs, hash)
+	}
+
 	rows, err := Conn.Query(`SELECT
       input,
       output,
       amount,
       signature,
       unique_string
-    FROM 'arach_transaction' WHERE input=? OR output=? ORDER BY 'block_height' asc, 'order' asc`, account, account)
+    FROM 'arach_transaction' WHERE (input=? OR output=?) AND block in (`+strings.Join(strings.Split(strings.Repeat("?", len(queryArgs)-2), ""), ",")+`) ORDER BY 'block_height' asc, 'order' asc`, queryArgs...)
 	defer rows.Close()
 
 	if err != nil {
@@ -364,6 +371,11 @@ func ValidateBlock(b block.Block) bool {
 	if b.HashString() == block.GenesisBlock.HashString() {
 		return true
 	} else {
+		// Genesis block doesn't have correct blockhash
+		if b.Height < 1 {
+			return false
+		}
+
 		if !work.ValidateBlockWork(b) {
 			return false
 		}
@@ -432,13 +444,18 @@ func GetTransactionsForHashes(blockHashes []string) []transaction.Transaction {
 		panic("Database connection not initialised")
 	}
 
+	var queryArgs []interface{}
+	for _, hash := range blockHashes {
+		queryArgs = append(queryArgs, hash)
+	}
+
 	rows, err := Conn.Query(`SELECT
       input,
       output,
       amount,
       signature,
       unique_string
-    FROM 'arach_transaction' WHERE block in (?) ORDER BY 'block_height' asc, 'order' asc`, strings.Join(blockHashes, ","))
+    FROM 'arach_transaction' WHERE block in (`+strings.Join(strings.Split(strings.Repeat("?", len(queryArgs)), ""), ",")+`) ORDER BY 'block_height' asc, 'order' asc`, queryArgs...)
 	defer rows.Close()
 
 	if err != nil {

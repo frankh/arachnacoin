@@ -18,6 +18,7 @@ func main() {
 	store.Init("db.sqlite")
 	head := store.FetchHighestBlock()
 	log.Printf("Initialised... Longest chain is height %d", head.Height)
+	log.Printf("Balance: %d", store.GetBalance(store.MyWallet.Address()))
 
 	for {
 		log.Printf("%d transactions in mempool", len(memPool))

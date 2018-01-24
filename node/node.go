@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"github.com/frankh/arachnacoin/block"
@@ -20,15 +21,20 @@ type MessageBlock struct {
 	Block block.Block `json:"block"`
 }
 
-type MessageChain struct {
-	Type   string        `json:"type"`
-	Blocks []block.Block `json:"blocks"`
+type MessageChainRequest struct {
+	Type   string `json:"type"`
+	Latest string `json:"latest"`
+}
+
+type Peer struct {
+	Address string
+	Conn    net.Conn
 }
 
 var broadcastAddress, _ = net.ResolveUDPAddr("udp", "224.0.0.1:31042")
 var broadcastPacket = []byte("Arachnacoin")
 var broadcastInterval = 3 * time.Second
-var connectedPeers = make(map[string]net.Conn)
+var connectedPeers = make(map[string]Peer)
 var localIp string
 
 func checkErr(err error) {
@@ -43,7 +49,7 @@ func AddrToIp(addr net.Addr) string {
 
 func PeerServer() {
 	log.Printf("Listening for peer connections on 31042")
-	ln, err := net.Listen("tcp", ":31042")
+	ln, err := net.Listen("tcp", "0.0.0.0:31042")
 	checkErr(err)
 
 	for {
@@ -58,43 +64,51 @@ func PeerServer() {
 		}
 
 		log.Printf("Accepted connection from peer %s", remoteIp)
-		connectedPeers[remoteIp] = conn
-		go handlePeerConnection(remoteIp, conn)
+		peer := Peer{remoteIp, conn}
+		connectedPeers[remoteIp] = peer
+		go handlePeerConnection(peer)
 	}
 }
 
-func handlePeerConnection(peer string, conn net.Conn) {
+func handlePeerConnection(peer Peer) {
 	var message Message
-	rawMessage := make([]byte, 10000)
 
 	for {
-		n, err := conn.Read(rawMessage)
+		jsonMessage, err := bufio.NewReader(peer.Conn).ReadBytes('\n')
 		if err != nil {
 			log.Printf("Disconnecting from peer: %s", err)
-			delete(connectedPeers, peer)
-			conn.Close()
+			delete(connectedPeers, peer.Address)
+			peer.Conn.Close()
 			return
 		}
-		jsonMessage := make([]byte, n)
-		copy(jsonMessage, rawMessage)
 
 		err = json.Unmarshal(jsonMessage, &message)
 		if err != nil {
-			panic(err)
+			log.Printf("%s", jsonMessage)
 			continue
 		}
 
 		switch message.Type {
 		case "block":
-			log.Printf("Received block from peer")
+			// log.Printf("Received block from %s", peer.Address)
 			var messageBlock MessageBlock
 			err = json.Unmarshal(jsonMessage, &messageBlock)
 			if err != nil {
 				log.Printf("Bad block...ignoring")
 				continue
 			}
-			receiveBlock(messageBlock.Block)
+			receiveBlock(peer, messageBlock.Block)
+		case "chain":
+			log.Printf("Received chain request from %s", peer.Address)
+			var messageChain MessageChainRequest
+			err = json.Unmarshal(jsonMessage, &messageChain)
+			if err != nil {
+				log.Printf("Bad chain request...ignoring")
+				continue
+			}
+			handleChainRequest(peer, messageChain.Latest)
 		default:
+			log.Printf("Ignoring unknown message from peer %s", peer.Address)
 			continue
 		}
 
@@ -102,18 +116,61 @@ func handlePeerConnection(peer string, conn net.Conn) {
 
 }
 
-func receiveBlock(b block.Block) {
-	if b.Height <= store.FetchHighestBlock().Height {
+func receiveBlock(peer Peer, b block.Block) {
+	if store.FetchBlock(b.HashString()) != nil {
+		// log.Printf("Already have this block")
 		return
 	}
 
 	if store.ValidateBlock(b) {
+		oldHeight := store.FetchHighestBlock().Height
 		log.Printf("Saved block of height %d", b.Height)
 		store.StoreBlock(b)
-		BroadcastLatestBlock()
+		if b.Height > oldHeight {
+			BroadcastLatestBlock()
+		}
 	} else {
-		log.Printf("Could not validate block...requesting chain")
+		requestBlockChain(peer, b)
 	}
+}
+
+func requestBlockChain(peer Peer, b block.Block) {
+	message := MessageChainRequest{
+		"chain",
+		b.HashString(),
+	}
+
+	jsonMessage, err := json.Marshal(message)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Printf("Requesting chain up to %d from %s", b.Height, peer.Address)
+	peer.Conn.Write(jsonMessage)
+	peer.Conn.Write([]byte{'\n'})
+}
+
+func handleChainRequest(peer Peer, latest string) {
+	b := store.FetchBlock(latest)
+	if b == nil {
+		log.Printf("Cannot handle chain request, block not found")
+		return
+	}
+
+	hashChain := store.GetBlockHashChain(b)
+	if hashChain == nil {
+		log.Printf("Cannot handle chain request, broken chain")
+		return
+	}
+
+	for i, _ := range hashChain {
+		// Send last block in hash chain (earliest) first
+		b = store.FetchBlock(hashChain[len(hashChain)-i-1])
+		if b != nil {
+			SendBlockToPeer(*b, peer)
+		}
+	}
+
 }
 
 func BroadcastLatestBlock() {
@@ -123,12 +180,12 @@ func BroadcastLatestBlock() {
 		return
 	}
 
-	for peer, conn := range connectedPeers {
-		SendBlockToPeer(b, peer, conn)
+	for _, peer := range connectedPeers {
+		SendBlockToPeer(b, peer)
 	}
 }
 
-func SendBlockToPeer(b block.Block, peer string, conn net.Conn) {
+func SendBlockToPeer(b block.Block, peer Peer) {
 	message := MessageBlock{
 		"block",
 		b,
@@ -139,8 +196,9 @@ func SendBlockToPeer(b block.Block, peer string, conn net.Conn) {
 		panic(err)
 	}
 
-	log.Printf("Sending block %d to %s", b.Height, peer)
-	conn.Write(jsonMessage)
+	// log.Printf("Sending block %d to %s", b.Height, peer.Address)
+	peer.Conn.Write(jsonMessage)
+	peer.Conn.Write([]byte{'\n'})
 }
 
 func ConnectToPeer(peerIp string) {
@@ -153,10 +211,11 @@ func ConnectToPeer(peerIp string) {
 		localIp = AddrToIp(conn.LocalAddr())
 		return
 	}
-	connectedPeers[peerIp] = conn
+	peer := Peer{peerIp, conn}
+	connectedPeers[peerIp] = peer
 	log.Printf("Connected to peer %s", peerIp)
 	BroadcastLatestBlock()
-	handlePeerConnection(peerIp, conn)
+	handlePeerConnection(peer)
 }
 
 func ListenForPeers() {
@@ -173,7 +232,7 @@ func ListenForPeers() {
 
 		peerIp := AddrToIp(addr)
 		// Don't try and connect to already connected peers
-		if peerIp == localIp || connectedPeers[peerIp] != nil {
+		if peerIp == localIp || connectedPeers[peerIp].Conn != nil {
 			continue
 		}
 
