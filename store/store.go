@@ -138,6 +138,7 @@ func FetchWallet() Wallet {
 
 	if !rows.Next() {
 		w := GenerateWallet()
+		rows.Close()
 		StoreWallet(w)
 		return w
 	}

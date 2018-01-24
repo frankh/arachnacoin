@@ -25,7 +25,10 @@ func main() {
 		log.Printf("Mined new block, new height %d", newBlock.Height)
 		store.StoreBlock(newBlock)
 		node.BroadcastLatestBlock()
+		head = store.FetchHighestBlock()
+		if head.Height > newBlock.Height {
+			log.Printf("Block was orphaned :(")
+		}
 		log.Printf("Balance: %d", store.GetBalance(store.MyWallet.Address()))
-		head = newBlock
 	}
 }
