@@ -195,7 +195,8 @@ func SendBlockToPeer(b block.Block, peer Peer) {
 
 	jsonMessage, err := json.Marshal(message)
 	if err != nil {
-		panic(err)
+		log.Printf("Couldn't read message %x", jsonMessage)
+		return
 	}
 
 	// log.Printf("Sending block %d to %s", b.Height, peer.Address)
