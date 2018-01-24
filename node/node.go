@@ -26,6 +26,11 @@ type MessageChainRequest struct {
 	Latest string `json:"latest"`
 }
 
+type MessageChainResponse struct {
+	Type   string        `json:"type"`
+	Blocks []block.Block `json:"blocks"`
+}
+
 type Peer struct {
 	Address string
 	Conn    net.Conn
@@ -99,15 +104,25 @@ func handlePeerConnection(peer Peer) {
 				continue
 			}
 			receiveBlock(peer, messageBlock.Block)
-		case "chain":
+		case "chain_req":
 			log.Printf("Received chain request from %s", peer.Address)
-			var messageChain MessageChainRequest
-			err = json.Unmarshal(jsonMessage, &messageChain)
+			var messageChainRequest MessageChainRequest
+			err = json.Unmarshal(jsonMessage, &messageChainRequest)
 			if err != nil {
 				log.Printf("Bad chain request...ignoring")
 				continue
 			}
-			handleChainRequest(peer, messageChain.Latest)
+			handleChainRequest(peer, messageChainRequest.Latest)
+		case "chain_resp":
+			log.Printf("Received chain response from %s", peer.Address)
+			var messageChainResponse MessageChainResponse
+			err = json.Unmarshal(jsonMessage, &messageChainResponse)
+			if err != nil {
+				log.Printf("Bad chain response...ignoring")
+				continue
+			}
+			handleChainResponse(messageChainResponse.Blocks)
+
 		default:
 			log.Printf("Ignoring unknown message from peer %s", peer.Address)
 			continue
@@ -115,6 +130,14 @@ func handlePeerConnection(peer Peer) {
 
 	}
 
+}
+
+func handleChainResponse(blocks []block.Block) {
+	for _, b := range blocks {
+		if store.ValidateBlock(b) {
+			store.StoreBlock(b)
+		}
+	}
 }
 
 func receiveBlock(peer Peer, b block.Block) {
@@ -137,7 +160,7 @@ func receiveBlock(peer Peer, b block.Block) {
 
 func requestBlockChain(peer Peer, b block.Block) {
 	message := MessageChainRequest{
-		"chain",
+		"chain_req",
 		b.HashString(),
 	}
 
@@ -165,13 +188,17 @@ func handleChainRequest(peer Peer, latest string) {
 		return
 	}
 
+	blocks := make([]block.Block, 0)
+
 	for i, _ := range hashChain {
 		// Send last block in hash chain (earliest) first
 		b = store.FetchBlock(hashChain[len(hashChain)-i-1])
 		if b != nil {
-			SendBlockToPeer(*b, peer)
+			blocks = append(blocks, *b)
 		}
 	}
+
+	sendBlockChainToPeer(blocks, peer)
 
 }
 
@@ -183,14 +210,31 @@ func BroadcastLatestBlock() {
 	}
 
 	for _, peer := range connectedPeers {
-		SendBlockToPeer(b, peer)
+		sendBlockToPeer(b, peer)
 	}
 }
 
-func SendBlockToPeer(b block.Block, peer Peer) {
+func sendBlockToPeer(b block.Block, peer Peer) {
 	message := MessageBlock{
 		"block",
 		b,
+	}
+
+	jsonMessage, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Couldn't read message %x", jsonMessage)
+		return
+	}
+
+	// log.Printf("Sending block %d to %s", b.Height, peer.Address)
+	peer.Conn.Write(jsonMessage)
+	peer.Conn.Write([]byte{'\n'})
+}
+
+func sendBlockChainToPeer(blocks []block.Block, peer Peer) {
+	message := MessageChainResponse{
+		"chain_resp",
+		blocks,
 	}
 
 	jsonMessage, err := json.Marshal(message)
