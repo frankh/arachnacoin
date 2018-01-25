@@ -241,6 +241,11 @@ func blockFromRows(rows *sql.Rows) block.Block {
 }
 
 func StoreBlock(b block.Block) {
+	// Ignore blocks we already have
+	if FetchBlock(b.HashString()) != nil {
+		return
+	}
+
 	prep, err := Conn.Prepare(`
     INSERT INTO arach_block (
       hash,
@@ -377,6 +382,7 @@ func ValidateBlock(b block.Block) bool {
 		}
 
 		if !work.ValidateBlockWork(b) {
+			log.Printf("Bad work")
 			return false
 		}
 		// Ensure there's only 1 blockreward issued per block and that it's
@@ -384,6 +390,7 @@ func ValidateBlock(b block.Block) bool {
 		hasReward := false
 		for _, t := range b.Transactions {
 			if t.Input == "blockReward" && (hasReward || t.Amount != block.BlockReward) {
+				log.Printf("Bad reward")
 				return false
 			}
 		}
@@ -393,6 +400,7 @@ func ValidateBlock(b block.Block) bool {
 		// Missing link in the chain - this is an invalid block
 		// until we get the missing links.
 		if hashChain == nil {
+			log.Printf("Bad hashchain")
 			return false
 		}
 
@@ -427,6 +435,7 @@ func VerifyTransactionsInChain(blockHashes []string) bool {
 		}
 
 		if t.Amount > balances[t.Input] {
+			log.Printf("Bad amount")
 			return false
 		}
 		balances[t.Input] -= t.Amount

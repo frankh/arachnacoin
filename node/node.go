@@ -133,11 +133,16 @@ func handlePeerConnection(peer Peer) {
 }
 
 func handleChainResponse(blocks []block.Block) {
+	log.Printf("Storing blocks...")
 	for _, b := range blocks {
 		if store.ValidateBlock(b) {
 			store.StoreBlock(b)
+		} else {
+			log.Printf("Bad chain at height %d: %s", b.Height, b.HashString())
+			return
 		}
 	}
+	log.Printf("Done! New height %d", store.FetchHighestBlock().Height)
 }
 
 func receiveBlock(peer Peer, b block.Block) {
@@ -146,7 +151,9 @@ func receiveBlock(peer Peer, b block.Block) {
 		return
 	}
 
-	if store.ValidateBlock(b) {
+	if b.Height < store.FetchHighestBlock().Height {
+		sendBlockToPeer(store.FetchHighestBlock(), peer)
+	} else if store.ValidateBlock(b) {
 		oldHeight := store.FetchHighestBlock().Height
 		log.Printf("Saved block of height %d", b.Height)
 		store.StoreBlock(b)

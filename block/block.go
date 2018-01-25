@@ -10,7 +10,7 @@ const BlockReward = uint32(5000)
 
 var GenesisBlock = Block{
 	"00000000000000000000000000000000",
-	0x00003b60,
+	0x01f17e51,
 	0,
 	make([]transaction.Transaction, 0),
 }

@@ -27,7 +27,7 @@ func main() {
 		store.StoreBlock(newBlock)
 		node.BroadcastLatestBlock()
 		head = store.FetchHighestBlock()
-		if head.Height > newBlock.Height {
+		if head.HashString() != newBlock.HashString() {
 			log.Printf("Block was orphaned :(")
 		}
 		log.Printf("Balance: %d", store.GetBalance(store.MyWallet.Address()))
